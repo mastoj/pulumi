@@ -1272,8 +1272,15 @@ func genTypeScriptProjectFile(info NodePackageInfo, files fs) string {
 type LanguageResource struct {
 	*schema.Resource
 
-	Name    string // The resource name (e.g. Deployment)
-	Package string // The package name (e.g. apps.v1)
+	Name       string // The resource name (e.g. Deployment)
+	Package    string // The package name (e.g. apps.v1)
+	Properties []LanguageProperty
+}
+
+type LanguageProperty struct {
+	ConstValue string
+	Name       string
+	Package    string
 }
 
 // LanguageResources returns a map of resources that can be used by downstream codegen. The map
@@ -1357,11 +1364,23 @@ func LanguageResources(tool string, pkg *schema.Package) (map[string]LanguageRes
 		}
 		for _, r := range mod.resources {
 			packagePath := strings.Replace(modName, "/", ".", -1)
-			resources[r.Token] = LanguageResource{
+			lr := LanguageResource{
 				Resource: r,
 				Name:     resourceName(r),
 				Package:  packagePath,
 			}
+			for _, p := range r.Properties {
+				lp := LanguageProperty{
+					Name: p.Name,
+				}
+				if p.ConstValue != nil {
+					lp.ConstValue = mod.typeString(p.Type, false, false, false, p.ConstValue)
+				} else {
+					lp.Package = mod.typeString(p.Type, false, false, false, nil)
+				}
+				lr.Properties = append(lr.Properties, lp)
+			}
+			resources[r.Token] = lr
 		}
 	}
 
