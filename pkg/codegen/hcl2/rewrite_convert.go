@@ -149,7 +149,7 @@ func convertPrimitiveValues(from model.Expression, to model.Type) (model.Express
 			}
 		}
 	case model.StringType:
-		stringValue := literalToString(from)
+		stringValue := convertLiteralToString(from)
 		if stringValue != "" {
 			value = cty.StringVal(stringValue)
 		}
@@ -198,14 +198,14 @@ func extractStringValue(arg model.Expression) (string, bool) {
 	return "", false
 }
 
-// literalToString converts a literal of type Bool, Int, or Number to its string representation. It also handles
+// convertLiteralToString converts a literal of type Bool, Int, or Number to its string representation. It also handles
 // the unary negate operation in front of a literal number.
-func literalToString(from model.Expression) string {
+func convertLiteralToString(from model.Expression) string {
 	var stringValue string
 	switch expr := from.(type) {
 	case *model.UnaryOpExpression:
 		if expr.Operation == hclsyntax.OpNegate {
-			operandValue := literalToString(expr.Operand)
+			operandValue := convertLiteralToString(expr.Operand)
 			if operandValue != "" {
 				stringValue = "-" + operandValue
 			}
