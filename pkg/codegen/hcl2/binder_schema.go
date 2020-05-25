@@ -281,18 +281,6 @@ func GetSchemaForType(t model.Type) (schema.Type, bool) {
 			return schemaTypes[0], true
 		}
 		return &schema.UnionType{ElementTypes: schemaTypes}, true
-	case *model.OpaqueType:
-		switch t {
-		case model.BoolType:
-			return schema.BoolType, true
-		case model.IntType:
-			return schema.IntType, true
-		case model.NumberType:
-			return schema.NumberType, true
-		case model.StringType:
-			return schema.StringType, true
-		}
-		return nil, false
 	default:
 		return nil, false
 	}

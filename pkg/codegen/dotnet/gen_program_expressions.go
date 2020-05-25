@@ -20,7 +20,6 @@ import (
 	"github.com/pulumi/pulumi/pkg/v2/codegen/schema"
 	"io"
 	"math/big"
-	"strconv"
 	"strings"
 
 	"github.com/hashicorp/hcl/v2"
@@ -253,78 +252,15 @@ func (g *generator) genFunctionUsings(x *model.FunctionCallExpression) []string 
 	return []string{fmt.Sprintf("%s = Pulumi.%[1]s", pkg)}
 }
 
-// extractStringLiteral returns the string value of a string literal if a given expression is a single-part string
-// template expression.
-func extractStringLiteral(arg model.Expression) (string, bool) {
-	switch expr := arg.(type) {
-	case *model.TemplateExpression:
-		if arg.Type() != model.StringType || len(expr.Parts) != 1 {
-			return "", false
-		}
-		if lit, ok := expr.Parts[0].(*model.LiteralValueExpression); ok && lit.Type() == model.StringType {
-			return lit.Value.AsString(), true
-		}
-	}
-
-	return "", false
-}
-
-func (g *generator) genConvert(w io.Writer, expr *model.FunctionCallExpression) {
-	switch arg := expr.Args[0].(type) {
-	case *model.ObjectConsExpression:
-		g.genObjectConsExpression(w, arg, expr.Type())
-	default:
-		if targetType, ok := hcl2.GetSchemaForType(expr.Type().(model.Type)); ok {
-			switch targetType {
-			case schema.BoolType:
-				if stringLiteral, ok := extractStringLiteral(arg); ok {
-					switch stringLiteral {
-					case "true", "false":
-						g.Fgenf(w, "%s", stringLiteral)
-						return
-					}
-				}
-				g.Fgenf(w, "System.Convert.ToBoolean(%.v)", arg)
-				return
-			case schema.IntType:
-				if stringLiteral, ok := extractStringLiteral(arg); ok {
-					if i, err := strconv.Atoi(stringLiteral); err == nil {
-						g.Fgenf(w, "%d", i)
-						return
-					}
-					g.Fgenf(w, "System.Convert.ToInt32(%.v)", arg)
-					return
-				}
-			case schema.NumberType:
-				if stringLiteral, ok := extractStringLiteral(arg); ok {
-					if i, err := strconv.ParseFloat(stringLiteral, 64); err == nil {
-						g.Fgenf(w, "%g", i)
-						return
-					}
-					g.Fgenf(w, "System.Convert.ToDouble(%.v)", arg)
-					return
-				}
-			case schema.StringType:
-				switch arg.Type() {
-				case model.BoolType, model.IntType, model.NumberType:
-					switch arg.(type) {
-					case *model.LiteralValueExpression:
-						g.Fgenf(w, "\"%.v\"", arg)
-					default:
-						g.Fgenf(w, "(%.v).ToString()", arg)
-					}
-					return
-				}
-			}
-		}
-		g.Fgenf(w, "%.v", arg) // <- probably wrong w.r.t. precedence
-	}
-}
-
 func (g *generator) GenFunctionCallExpression(w io.Writer, expr *model.FunctionCallExpression) {
 	switch expr.Name {
 	case hcl2.IntrinsicConvert:
-		g.genConvert(w, expr)
+		switch arg := expr.Args[0].(type) {
+		case *model.ObjectConsExpression:
+			g.genObjectConsExpression(w, arg, expr.Type())
+		default:
+			g.Fgenf(w, "%.v", arg) // <- probably wrong w.r.t. precedence
+		}
 	case hcl2.IntrinsicApply:
 		g.genApply(w, expr)
 	case intrinsicAwait:

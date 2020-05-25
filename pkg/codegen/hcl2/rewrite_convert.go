@@ -2,11 +2,13 @@ package hcl2
 
 import (
 	"github.com/hashicorp/hcl/v2"
+	"github.com/hashicorp/hcl/v2/hclsyntax"
 	"github.com/pulumi/pulumi/pkg/v2/codegen"
 	"github.com/pulumi/pulumi/pkg/v2/codegen/hcl2/model"
 	"github.com/pulumi/pulumi/pkg/v2/codegen/schema"
 	"github.com/pulumi/pulumi/sdk/v2/go/common/util/contract"
 	"github.com/zclconf/go-cty/cty"
+	"strconv"
 )
 
 func sameSchemaTypes(xt, yt model.Type) bool {
@@ -116,5 +118,105 @@ func RewriteConversions(x model.Expression, to model.Type) model.Expression {
 	if to.AssignableFrom(x.Type()) && sameSchemaTypes(to, x.Type()) {
 		return x
 	}
+	// If we can convert a primitive value in place, do so.
+	if value, ok := convertPrimitiveValues(x, to); ok {
+		return value
+	}
 	return NewConvertCall(x, to)
+}
+
+// convertPrimitiveValues returns a new expression if the given expression can be converted to another primitive type
+// (bool, int, number, string) that matches the target type.
+func convertPrimitiveValues(from model.Expression, to model.Type) (model.Expression, bool) {
+	value := cty.NilVal
+	switch resolveUnderlyingType(to) {
+	case model.BoolType:
+		if stringLiteral, ok := extractStringValue(from); ok {
+			if b, err := strconv.ParseBool(stringLiteral); err == nil {
+				value = cty.BoolVal(b)
+			}
+		}
+	case model.IntType:
+		if stringLiteral, ok := extractStringValue(from); ok {
+			if i, err := strconv.ParseInt(stringLiteral, 10, 64); err == nil {
+				value = cty.NumberIntVal(i)
+			}
+		}
+	case model.NumberType:
+		if stringLiteral, ok := extractStringValue(from); ok {
+			if f, err := strconv.ParseFloat(stringLiteral, 64); err == nil {
+				value = cty.NumberFloatVal(f)
+			}
+		}
+	case model.StringType:
+		stringValue := literalToString(from)
+		if stringValue != "" {
+			value = cty.StringVal(stringValue)
+		}
+	}
+	if value == cty.NilVal {
+		return nil, false
+	}
+
+	stringLiteral := model.LiteralValueExpression{Value: value}
+	return &stringLiteral, true
+}
+
+// resolveUnderlyingType replaces all output(T) and promise(T) types in the input type with their element type and
+// removes the none type from unions.
+func resolveUnderlyingType(t model.Type) model.Type {
+	switch t := t.(type) {
+	case *model.OutputType:
+		return resolveUnderlyingType(t.ElementType)
+	case *model.PromiseType:
+		return resolveUnderlyingType(t.ElementType)
+	case *model.UnionType:
+		var elementTypes []model.Type
+		for _, t := range t.ElementTypes {
+			if t != model.NoneType {
+				elementTypes = append(elementTypes, resolveUnderlyingType(t))
+			}
+		}
+		return model.NewUnionType(elementTypes...)
+	}
+	return t
+}
+
+// extractStringValue returns a string if the given expression is a template expression containing a single string
+// literal value.
+func extractStringValue(arg model.Expression) (string, bool) {
+	switch expr := arg.(type) {
+	case *model.TemplateExpression:
+		if arg.Type() != model.StringType || len(expr.Parts) != 1 {
+			return "", false
+		}
+		if lit, ok := expr.Parts[0].(*model.LiteralValueExpression); ok && lit.Type() == model.StringType {
+			return lit.Value.AsString(), true
+		}
+	}
+
+	return "", false
+}
+
+// literalToString converts a literal of type Bool, Int, or Number to its string representation. It also handles
+// the unary negate operation in front of a literal number.
+func literalToString(from model.Expression) string {
+	var stringValue string
+	switch expr := from.(type) {
+	case *model.UnaryOpExpression:
+		if expr.Operation == hclsyntax.OpNegate {
+			operandValue := literalToString(expr.Operand)
+			if operandValue != "" {
+				stringValue = "-" + operandValue
+			}
+		}
+	case *model.LiteralValueExpression:
+		switch expr.Type() {
+		case model.BoolType:
+			stringValue = strconv.FormatBool(expr.Value.True())
+		case model.IntType, model.NumberType:
+			stringValue = expr.Value.AsBigFloat().String()
+		}
+	}
+	return stringValue
 }
