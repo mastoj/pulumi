@@ -259,7 +259,7 @@ func (g *generator) GenFunctionCallExpression(w io.Writer, expr *model.FunctionC
 		case *model.ObjectConsExpression:
 			g.genObjectConsExpression(w, arg, expr.Type())
 		default:
-			g.Fgenf(w, "%.v", arg) // <- probably wrong w.r.t. precedence
+			g.Fgenf(w, "%.v", expr.Args[0]) // <- probably wrong w.r.t. precedence
 		}
 	case hcl2.IntrinsicApply:
 		g.genApply(w, expr)
